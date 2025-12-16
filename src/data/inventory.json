@@ -1,0 +1,93 @@
+[
+  {
+    "id": "1",
+    "name": "The Science Behiend , the game of life ",
+    "price": 12.99,
+    "barcode": "S0065"
+  },
+  {
+    "id": "2",
+    "name": "Navavidha Bhakti",
+    "price":200.00,
+    "barcode": "N0010"
+  },
+  {
+    "id": "3",
+    "name": "Geeta in Daliy Life ",
+    "price": 13.99,
+    "barcode": "G0048"
+  },
+  {
+    "id": "4",
+    "name": "Pride and Prejudice",
+    "price": 11.99,
+    "barcode": "9780141439518"
+  },
+  {
+    "id": "5",
+    "name": "The Catcher in the Rye",
+    "price": 12.49,
+    "barcode": "9780316769174"
+  },
+  {
+    "id": "6",
+    "name": "Lord of the Flies",
+    "price": 10.99,
+    "barcode": "9780571056866"
+  },
+  {
+    "id": "7",
+    "name": "Animal Farm",
+    "price": 9.99,
+    "barcode": "9780452284241"
+  },
+  {
+    "id": "8",
+    "name": "Brave New World",
+    "price": 13.49,
+    "barcode": "9780060850524"
+  },
+  {
+    "id": "9",
+    "name": "The Hobbit",
+    "price": 15.99,
+    "barcode": "9780547928227"
+  },
+  {
+    "id": "10",
+    "name": "Fahrenheit 451",
+    "price": 12.99,
+    "barcode": "9781451673319"
+  },
+  {
+    "id": "11",
+    "name": "Moby Dick",
+    "price": 16.99,
+    "barcode": "9780142437247"
+  },
+  {
+    "id": "12",
+    "name": "Jane Eyre",
+    "price": 11.49,
+    "barcode": "9780141441146"
+  },
+  {
+    "id": "13",
+    "name": "Wuthering Heights",
+    "price": 10.99,
+    "barcode": "9780141439556"
+  },
+  {
+    "id": "14",
+    "name": "The Picture of Dorian Gray",
+    "price": 9.99,
+    "barcode": "9780141439570"
+  },
+  {
+    "id": "15",
+    "name": "Dracula",
+    "price": 12.99,
+    "barcode": "9780141439846"
+  }
+]
+
