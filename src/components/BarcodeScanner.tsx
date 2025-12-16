@@ -53,7 +53,8 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
 
     // Patch Node.removeChild to suppress errors temporarily
     const originalRemoveChild = Node.prototype.removeChild;
-    Node.prototype.removeChild = function (child: Node) {
+    // Cast prototype to any to avoid TypeScript signature mismatch
+    (Node.prototype as any).removeChild = function (this: Node, child: Node) {
       try {
         return originalRemoveChild.call(this, child);
       } catch (error: any) {
@@ -93,24 +94,156 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
     }, 500)
   ).current;
 
+  // Detect iOS
+  const isIOS = () => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  };
+
   const startScanner = async () => {
     try {
-      // Check camera permissions
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      stream.getTracks().forEach((track) => track.stop()); // Stop immediately, Html5Qrcode will handle it
-      setHasPermission(true);
-
       const scanner = new Html5Qrcode(scannerIdRef.current);
       scannerRef.current = scanner;
 
+      if (isIOS()) {
+        // iOS-specific approach: Use simpler configuration
+        // Try multiple methods to get camera working on iOS
+        
+        // Method 1: Try with deviceId enumeration
+        let cameraId: string | null = null;
+        try {
+          // Request permission first to get device labels
+          const tempStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+          });
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          tempStream.getTracks().forEach((track) => track.stop());
+          
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          
+          if (videoDevices.length > 1) {
+            // Use the last device (usually back camera on iOS)
+            cameraId = videoDevices[videoDevices.length - 1].deviceId;
+          } else if (videoDevices.length === 1) {
+            cameraId = videoDevices[0].deviceId;
+          }
+        } catch (e) {
+          console.debug('Device enumeration failed:', e);
+        }
+
+        // Try starting with deviceId if available, otherwise use facingMode
+        try {
+          if (cameraId && cameraId !== 'default') {
+            await scanner.start(
+              cameraId,
+              {
+                fps: 5, // Lower FPS for iOS
+                qrbox: function(viewfinderWidth, viewfinderHeight) {
+                  // Use percentage-based sizing for iOS
+                  const minEdgePercentage = 0.7;
+                  const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+                  const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+                  return {
+                    width: qrboxSize,
+                    height: qrboxSize
+                  };
+                },
+                aspectRatio: 1.0,
+                disableFlip: false,
+              },
+              (decodedText) => {
+                debouncedScan(decodedText);
+              },
+              (errorMessage) => {
+                // Ignore not found errors
+              }
+            );
+          } else {
+            // Fallback to facingMode
+            await scanner.start(
+              { facingMode: 'environment' },
+              {
+                fps: 5,
+                qrbox: function(viewfinderWidth, viewfinderHeight) {
+                  const minEdgePercentage = 0.7;
+                  const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+                  const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+                  return {
+                    width: qrboxSize,
+                    height: qrboxSize
+                  };
+                },
+                aspectRatio: 1.0,
+                disableFlip: false,
+              },
+              (decodedText) => {
+                debouncedScan(decodedText);
+              },
+              (errorMessage) => {
+                // Ignore not found errors
+              }
+            );
+          }
+          setHasPermission(true);
+          setIsScanning(true);
+          
+          // iOS: Verify video element was created after a short delay
+          setTimeout(() => {
+            const element = document.getElementById(scannerIdRef.current);
+            const video = element?.querySelector('video');
+            if (!video && isIOS()) {
+              console.warn('Video element not found after start on iOS - camera may not be visible');
+            }
+          }, 1000);
+          
+          return;
+        } catch (iosError: any) {
+          console.error('iOS camera start failed:', iosError);
+          // Try one more time with absolute simplest config
+          try {
+            await scanner.start(
+              { facingMode: 'environment' },
+              {
+                fps: 2,
+                qrbox: { width: 250, height: 250 },
+                disableFlip: false,
+              },
+              (decodedText) => {
+                debouncedScan(decodedText);
+              },
+              () => {}
+            );
+            setHasPermission(true);
+            setIsScanning(true);
+            
+            // Check again after fallback attempt
+            setTimeout(() => {
+              const element = document.getElementById(scannerIdRef.current);
+              const video = element?.querySelector('video');
+              if (!video && isIOS()) {
+                console.warn('Video element still not found after fallback on iOS');
+              }
+            }, 1000);
+            
+            return;
+          } catch (finalError: any) {
+            throw finalError;
+          }
+        }
+      }
+
+      // Non-iOS: Use standard configuration
+      const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      permissionStream.getTracks().forEach((track) => track.stop());
+      setHasPermission(true);
+
       await scanner.start(
-        {
-          facingMode: 'environment', // Use back camera on mobile
-        },
+        { facingMode: 'environment' },
         {
           fps: 10,
           qrbox: { width: 250, height: 250 },
           aspectRatio: 1.0,
+          disableFlip: false,
         },
         (decodedText) => {
           debouncedScan(decodedText);
@@ -124,10 +257,25 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
     } catch (error: any) {
       console.error('Error starting scanner:', error);
       setHasPermission(false);
+      
+      // Provide iOS-specific error messages
+      let errorMessage = error.message || 'Failed to start camera. Please check permissions.';
+      if (isIOS()) {
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          errorMessage = 'Camera permission denied. Please allow camera access in Safari settings (Settings > Safari > Camera).';
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          errorMessage = 'No camera found. Please ensure your device has a camera.';
+        } else if (error.message?.includes('HTTPS') || error.message?.includes('secure context')) {
+          errorMessage = 'Camera requires HTTPS. Please access this site over HTTPS (not HTTP).';
+        } else if (error.message?.includes('could not start') || error.message?.includes('NotReadableError')) {
+          errorMessage = 'Could not start camera. Try: 1) Close other apps using camera 2) Refresh page 3) Restart Safari';
+        } else {
+          errorMessage = `Camera error on iOS: ${error.message || error.name}. Try refreshing the page.`;
+        }
+      }
+      
       if (onError) {
-        onError(
-          error.message || 'Failed to start camera. Please check permissions.'
-        );
+        onError(errorMessage);
       }
     }
   };
@@ -248,6 +396,11 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
         className={`w-full rounded-lg overflow-hidden ${
           isScanning ? 'min-h-[250px] sm:min-h-[300px] bg-gray-100' : 'min-h-[250px] sm:min-h-[300px] bg-gray-200 flex items-center justify-center'
         }`}
+        style={isScanning && isIOS() ? { 
+          position: 'relative',
+          minHeight: '300px',
+          backgroundColor: '#000'
+        } : undefined}
       >
         {!isScanning && (
           <div className="text-center text-gray-500">
