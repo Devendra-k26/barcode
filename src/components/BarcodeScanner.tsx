@@ -53,7 +53,8 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
 
     // Patch Node.removeChild to suppress errors temporarily
     const originalRemoveChild = Node.prototype.removeChild;
-    Node.prototype.removeChild = function (child: Node) {
+    // Cast prototype to any to avoid TypeScript signature mismatch
+    (Node.prototype as any).removeChild = function (this: Node, child: Node) {
       try {
         return originalRemoveChild.call(this, child);
       } catch (error: any) {
