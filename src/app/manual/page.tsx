@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { InventoryProvider, useInventory } from '@/context/InventoryContext';
-import { CartProvider, useCart } from '@/context/CartContext';
+import { useInventory } from '@/context/InventoryContext';
+import { useCart } from '@/context/CartContext';
 import ManualEntry from '@/components/ManualEntry';
 import Cart from '@/components/Cart';
 import ErrorMessage from '@/components/ErrorMessage';
@@ -82,12 +82,6 @@ function ManualEntryContent() {
 }
 
 export default function ManualPage() {
-  return (
-    <InventoryProvider>
-      <CartProvider>
-        <ManualEntryContent />
-      </CartProvider>
-    </InventoryProvider>
-  );
+  return <ManualEntryContent />;
 }
 

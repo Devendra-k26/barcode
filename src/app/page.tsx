@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { InventoryProvider, useInventory } from '@/context/InventoryContext';
-import { CartProvider, useCart } from '@/context/CartContext';
+import { useInventory } from '@/context/InventoryContext';
+import { useCart } from '@/context/CartContext';
 import Link from 'next/link';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import Cart from '@/components/Cart';
@@ -92,11 +92,5 @@ function BookStoreContent() {
 }
 
 export default function Home() {
-  return (
-    <InventoryProvider>
-      <CartProvider>
-        <BookStoreContent />
-      </CartProvider>
-    </InventoryProvider>
-  );
+  return <BookStoreContent />;
 }
