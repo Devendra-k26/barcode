@@ -96,72 +96,141 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
 
   // Detect iOS
   const isIOS = () => {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    // Log for debugging
+    if (isIOSDevice) {
+      console.log('iOS detected:', {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        maxTouchPoints: navigator.maxTouchPoints
+      });
+    }
+    
+    return isIOSDevice;
   };
 
   const startScanner = async () => {
-    try {
-      // Check camera permissions first
-      const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      permissionStream.getTracks().forEach((track) => track.stop());
-      setHasPermission(true);
+    const scanner = new Html5Qrcode(scannerIdRef.current);
+    scannerRef.current = scanner;
 
-      const scanner = new Html5Qrcode(scannerIdRef.current);
-      scannerRef.current = scanner;
+    if (isIOS()) {
+      // iOS-specific handling with multiple fallback strategies
+      try {
+        // Step 1: Request permission and enumerate devices
+        const permissionStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: 'environment' } 
+        });
+        permissionStream.getTracks().forEach((track) => track.stop());
+        setHasPermission(true);
 
-      // iOS requires different camera configuration
-      let cameraConfig: string | { facingMode: string } = { facingMode: 'environment' };
-      
-      if (isIOS()) {
-        try {
-          // Enumerate devices to find back camera on iOS
-          // Need to request permission first to get device labels
-          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          tempStream.getTracks().forEach((track) => track.stop());
-          
-          const videoDevices = devices.filter(device => device.kind === 'videoinput');
-          
-          // iOS often labels back camera as "back" or has specific deviceId
+        // Enumerate devices to find back camera
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        // Try different camera configurations
+        const configsToTry = [];
+        
+        // Config 1: Use deviceId if available
+        if (videoDevices.length > 1) {
           const backCamera = videoDevices.find(device => 
             device.label.toLowerCase().includes('back') || 
             device.label.toLowerCase().includes('rear') ||
             device.label.toLowerCase().includes('environment')
           );
-          
-          if (backCamera && backCamera.deviceId && backCamera.deviceId !== 'default') {
-            // Use deviceId directly as string for html5-qrcode
-            cameraConfig = backCamera.deviceId;
-          } else if (videoDevices.length > 1) {
-            // Use the last device (usually back camera on iOS)
-            cameraConfig = videoDevices[videoDevices.length - 1].deviceId;
+          if (backCamera?.deviceId && backCamera.deviceId !== 'default') {
+            configsToTry.push({ type: 'deviceId', value: backCamera.deviceId });
+          } else {
+            // Use last device (usually back camera on iOS)
+            configsToTry.push({ type: 'deviceId', value: videoDevices[videoDevices.length - 1].deviceId });
           }
-          // If only one device or no labels, fall back to facingMode
-        } catch (e) {
-          // Fallback to facingMode if device enumeration fails
-          console.debug('Could not enumerate devices, using facingMode:', e);
         }
-      }
+        
+        // Config 2: Use facingMode
+        configsToTry.push({ type: 'facingMode', value: { facingMode: 'environment' } });
+        
+        // Config 3: Use facingMode with user (front camera as last resort)
+        configsToTry.push({ type: 'facingMode', value: { facingMode: 'user' } });
 
-      // iOS requires different qrbox configuration
-      const qrboxConfig = isIOS()
-        ? {
-            // iOS needs smaller qrbox
-            width: 200,
-            height: 200,
+        // Try each configuration
+        for (const config of configsToTry) {
+          try {
+            const cameraConfig = config.type === 'deviceId' ? config.value : config.value;
+            
+            await scanner.start(
+              cameraConfig,
+              {
+                fps: 5, // Lower FPS for iOS - better performance
+                qrbox: function(viewfinderWidth, viewfinderHeight) {
+                  // Use percentage-based sizing for iOS
+                  const minEdgePercentage = 0.75;
+                  const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+                  const qrboxSize = Math.floor(minEdgeSize * minEdgePercentage);
+                  return {
+                    width: qrboxSize,
+                    height: qrboxSize
+                  };
+                },
+                aspectRatio: 1.0,
+                disableFlip: false,
+              },
+              (decodedText) => {
+                debouncedScan(decodedText);
+              },
+              (errorMessage) => {
+                // Ignore not found errors
+              }
+            );
+            
+            setIsScanning(true);
+            console.log('iOS camera started successfully with config:', config.type);
+            return; // Success!
+          } catch (configError: any) {
+            console.debug(`iOS camera config ${config.type} failed:`, configError);
+            // Try next config
+            continue;
           }
-        : {
-            width: 250,
-            height: 250,
-          };
+        }
+        
+        // If all configs failed, throw error
+        throw new Error('All camera configurations failed on iOS');
+      } catch (error: any) {
+        console.error('iOS camera start error:', error);
+        setHasPermission(false);
+        
+        let errorMessage = 'Failed to start camera on iOS. ';
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          errorMessage = 'Camera permission denied. Go to Settings > Safari > Camera and allow access.';
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          errorMessage = 'No camera found. Please ensure your device has a camera.';
+        } else if (error.message?.includes('HTTPS') || error.message?.includes('secure context')) {
+          errorMessage = 'Camera requires HTTPS. Please access this site over HTTPS (not HTTP).';
+        } else if (error.message?.includes('NotReadableError') || error.message?.includes('could not start')) {
+          errorMessage = 'Camera is in use by another app. Close other apps and try again.';
+        } else {
+          errorMessage += `Error: ${error.message || error.name}. Try refreshing the page.`;
+        }
+        
+        if (onError) {
+          onError(errorMessage);
+        }
+        return;
+      }
+    }
+
+    // Non-iOS: Standard configuration
+    try {
+      const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      permissionStream.getTracks().forEach((track) => track.stop());
+      setHasPermission(true);
 
       await scanner.start(
-        cameraConfig,
+        { facingMode: 'environment' },
         {
           fps: 10,
-          qrbox: qrboxConfig,
-          aspectRatio: isIOS() ? undefined : 1.0, // iOS doesn't work well with fixed aspectRatio
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
           disableFlip: false,
         },
         (decodedText) => {
@@ -177,20 +246,7 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
       console.error('Error starting scanner:', error);
       setHasPermission(false);
       
-      // Provide iOS-specific error messages
       let errorMessage = error.message || 'Failed to start camera. Please check permissions.';
-      if (isIOS()) {
-        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-          errorMessage = 'Camera permission denied. Please allow camera access in Safari settings.';
-        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-          errorMessage = 'No camera found. Please ensure your device has a camera.';
-        } else if (error.message?.includes('HTTPS')) {
-          errorMessage = 'Camera requires HTTPS. Please access this site over HTTPS.';
-        } else if (error.message?.includes('could not start') || error.message?.includes('NotReadableError')) {
-          errorMessage = 'Could not start camera. Try refreshing the page or restarting Safari.';
-        }
-      }
-      
       if (onError) {
         onError(errorMessage);
       }
@@ -303,7 +359,17 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
       {hasPermission === false && (
         <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
           <p className="text-sm text-yellow-800">
-            Camera permission denied. Please allow camera access to scan barcodes.
+            {isIOS() 
+              ? 'Camera permission denied. Go to Settings > Safari > Camera and allow access, then refresh the page.'
+              : 'Camera permission denied. Please allow camera access to scan barcodes.'}
+          </p>
+        </div>
+      )}
+
+      {isIOS() && !isScanning && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-xs text-blue-800">
+            <strong>iOS Device Detected:</strong> Make sure you're using Safari and the site is accessed over HTTPS.
           </p>
         </div>
       )}
