@@ -36,7 +36,7 @@ export default function ManualEntry({ onScan }: ManualEntryProps) {
         <div>
           <label
             htmlFor="barcode-input"
-            className="block text-sm font-medium text-gray-700 mb-2"
+            className="block text-sm font-medium text-black mb-2"
           >
             Enter Barcode / ISBN
           </label>
@@ -47,7 +47,7 @@ export default function ManualEntry({ onScan }: ManualEntryProps) {
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
               placeholder="e.g., 9780743273565"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
               disabled={isSubmitting}
               autoComplete="off"
             />
