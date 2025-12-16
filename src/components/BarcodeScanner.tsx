@@ -94,24 +94,75 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
     }, 500)
   ).current;
 
+  // Detect iOS
+  const isIOS = () => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  };
+
   const startScanner = async () => {
     try {
-      // Check camera permissions
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      stream.getTracks().forEach((track) => track.stop()); // Stop immediately, Html5Qrcode will handle it
+      // Check camera permissions first
+      const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      permissionStream.getTracks().forEach((track) => track.stop());
       setHasPermission(true);
 
       const scanner = new Html5Qrcode(scannerIdRef.current);
       scannerRef.current = scanner;
 
+      // iOS requires different camera configuration
+      let cameraConfig: string | { facingMode: string } = { facingMode: 'environment' };
+      
+      if (isIOS()) {
+        try {
+          // Enumerate devices to find back camera on iOS
+          // Need to request permission first to get device labels
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          tempStream.getTracks().forEach((track) => track.stop());
+          
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          
+          // iOS often labels back camera as "back" or has specific deviceId
+          const backCamera = videoDevices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('rear') ||
+            device.label.toLowerCase().includes('environment')
+          );
+          
+          if (backCamera && backCamera.deviceId && backCamera.deviceId !== 'default') {
+            // Use deviceId directly as string for html5-qrcode
+            cameraConfig = backCamera.deviceId;
+          } else if (videoDevices.length > 1) {
+            // Use the last device (usually back camera on iOS)
+            cameraConfig = videoDevices[videoDevices.length - 1].deviceId;
+          }
+          // If only one device or no labels, fall back to facingMode
+        } catch (e) {
+          // Fallback to facingMode if device enumeration fails
+          console.debug('Could not enumerate devices, using facingMode:', e);
+        }
+      }
+
+      // iOS requires different qrbox configuration
+      const qrboxConfig = isIOS()
+        ? {
+            // iOS needs smaller qrbox
+            width: 200,
+            height: 200,
+          }
+        : {
+            width: 250,
+            height: 250,
+          };
+
       await scanner.start(
-        {
-          facingMode: 'environment', // Use back camera on mobile
-        },
+        cameraConfig,
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0,
+          qrbox: qrboxConfig,
+          aspectRatio: isIOS() ? undefined : 1.0, // iOS doesn't work well with fixed aspectRatio
+          disableFlip: false,
         },
         (decodedText) => {
           debouncedScan(decodedText);
@@ -125,10 +176,23 @@ export default function BarcodeScanner({ onScan, onError }: BarcodeScannerProps)
     } catch (error: any) {
       console.error('Error starting scanner:', error);
       setHasPermission(false);
+      
+      // Provide iOS-specific error messages
+      let errorMessage = error.message || 'Failed to start camera. Please check permissions.';
+      if (isIOS()) {
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          errorMessage = 'Camera permission denied. Please allow camera access in Safari settings.';
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          errorMessage = 'No camera found. Please ensure your device has a camera.';
+        } else if (error.message?.includes('HTTPS')) {
+          errorMessage = 'Camera requires HTTPS. Please access this site over HTTPS.';
+        } else if (error.message?.includes('could not start') || error.message?.includes('NotReadableError')) {
+          errorMessage = 'Could not start camera. Try refreshing the page or restarting Safari.';
+        }
+      }
+      
       if (onError) {
-        onError(
-          error.message || 'Failed to start camera. Please check permissions.'
-        );
+        onError(errorMessage);
       }
     }
   };
