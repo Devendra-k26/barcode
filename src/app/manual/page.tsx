@@ -66,7 +66,7 @@ function ManualEntryContent() {
           {/* Left Column - Manual Entry and Inventory */}
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             <ManualEntry onScan={handleScan} />
-            {showInventory && <BookList />}
+            {showInventory && <BookList onBookSelect={addToCart} />}
           </div>
 
           {/* Right Column - Cart */}

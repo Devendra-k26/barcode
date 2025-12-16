@@ -16,13 +16,15 @@ function BookStoreContent() {
   const [error, setError] = useState<string | null>(null);
   const [showInventory, setShowInventory] = useState(false);
 
-  const handleScan = (barcode: string) => {
+  const handleScan = (barcode: string): boolean => {
     const book = findBookByBarcode(barcode);
     if (book) {
       addToCart(book);
       setError(null);
+      return true; // Book found
     } else {
       setError(`Book with barcode "${barcode}" not found in inventory.`);
+      return false; // Book not found
     }
   };
 
@@ -76,7 +78,7 @@ function BookStoreContent() {
                 onError={handleScannerError}
               />
             </ErrorBoundary>
-            {showInventory && <BookList />}
+            {showInventory && <BookList onBookSelect={addToCart} />}
           </div>
 
           {/* Right Column - Cart */}
